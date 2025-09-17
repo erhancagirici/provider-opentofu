@@ -9,7 +9,9 @@ package v1beta1
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
+	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
+
+	sharedv1beta1 "github.com/upbound/provider-opentofu/apis/shared/v1beta1"
 )
 
 // A ProviderConfigSpec defines the desired state of a ProviderConfig.
@@ -39,17 +41,7 @@ type ProviderConfigSpec struct {
 }
 
 // ProviderCredentials required to authenticate.
-type ProviderCredentials struct {
-	// Filename (relative to main.tf) to which these provider credentials
-	// should be written.
-	Filename string `json:"filename"`
-
-	// Source of the provider credentials.
-	// +kubebuilder:validation:Enum=None;Secret;Environment;Filesystem
-	Source xpv1.CredentialsSource `json:"source"`
-
-	xpv1.CommonCredentialSelectors `json:",inline"`
-}
+type ProviderCredentials = sharedv1beta1.ProviderCredentials
 
 // A ProviderConfigStatus reflects the observed state of a ProviderConfig.
 type ProviderConfigStatus struct {

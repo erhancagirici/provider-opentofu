@@ -12,13 +12,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/crossplane/crossplane-runtime/pkg/logging"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/spf13/afero"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/upbound/provider-opentofu/apis/v1beta1"
+	"github.com/upbound/provider-opentofu/apis/cluster/v1beta1"
+	namespacedv1beta1 "github.com/upbound/provider-opentofu/apis/namespaced/v1beta1"
 )
 
 // Error strings.
@@ -102,8 +103,16 @@ func (gc *GarbageCollector) collect(ctx context.Context) error {
 		return errors.Wrap(err, errListWorkspaces)
 	}
 
+	ln := &namespacedv1beta1.WorkspaceList{}
+	if err := gc.kube.List(ctx, ln); err != nil {
+		return errors.Wrap(err, errListWorkspaces)
+	}
+
 	exists := map[string]bool{}
 	for _, ws := range l.Items {
+		exists[string(ws.GetUID())] = true
+	}
+	for _, ws := range ln.Items {
 		exists[string(ws.GetUID())] = true
 	}
 	fis, err := gc.fs.ReadDir(gc.parentDir)

@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/crossplane/crossplane-runtime/pkg/logging"
-	"github.com/crossplane/crossplane-runtime/pkg/statemetrics"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/statemetrics"
 	"github.com/pkg/errors"
 	"github.com/spf13/afero"
 	corev1 "k8s.io/api/core/v1"
@@ -25,18 +25,17 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
-	"github.com/crossplane/crossplane-runtime/pkg/connection"
-	"github.com/crossplane/crossplane-runtime/pkg/controller"
-	"github.com/crossplane/crossplane-runtime/pkg/event"
-	"github.com/crossplane/crossplane-runtime/pkg/meta"
-	"github.com/crossplane/crossplane-runtime/pkg/ratelimiter"
-	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
-	"github.com/crossplane/crossplane-runtime/pkg/resource"
+	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/controller"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/event"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/meta"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/ratelimiter"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 
 	"github.com/hashicorp/go-getter"
 
-	"github.com/upbound/provider-opentofu/apis/v1beta1"
+	"github.com/upbound/provider-opentofu/apis/cluster/v1beta1"
 	"github.com/upbound/provider-opentofu/internal/controller/features"
 	"github.com/upbound/provider-opentofu/internal/opentofu"
 	"github.com/upbound/provider-opentofu/internal/workdir"
@@ -113,11 +112,6 @@ func Setup(mgr ctrl.Manager, o controller.Options, timeout, pollJitter time.Dura
 	gcTmp := workdir.NewGarbageCollector(mgr.GetClient(), filepath.Join("/tmp", tfDir), workdir.WithFs(fs), workdir.WithLogger(o.Logger))
 	go gcTmp.Run(context.TODO())
 
-	cps := []managed.ConnectionPublisher{managed.NewAPISecretPublisher(mgr.GetClient(), mgr.GetScheme())}
-	if o.Features.Enabled(features.EnableAlphaExternalSecretStores) {
-		cps = append(cps, connection.NewDetailsManager(mgr.GetClient(), v1beta1.StoreConfigGroupVersionKind, connection.WithTLSConfig(o.ESSOptions.TLSConfig)))
-	}
-
 	c := &connector{
 		kube:   mgr.GetClient(),
 		usage:  resource.NewProviderConfigUsageTracker(mgr.GetClient(), &v1beta1.ProviderConfigUsage{}),
@@ -135,7 +129,6 @@ func Setup(mgr ctrl.Manager, o controller.Options, timeout, pollJitter time.Dura
 		managed.WithLogger(o.Logger.WithValues("controller", name)),
 		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))),
 		managed.WithTimeout(timeout),
-		managed.WithConnectionPublishers(cps...),
 		managed.WithMetricRecorder(o.MetricOptions.MRMetrics),
 	}
 
@@ -448,19 +441,23 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 	return managed.ExternalUpdate{ConnectionDetails: op2cd(op)}, nil
 }
 
-func (c *external) Delete(ctx context.Context, mg resource.Managed) error {
+func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.ExternalDelete, error) {
 	cr, ok := mg.(*v1beta1.Workspace)
 	if !ok {
-		return errors.New(errNotWorkspace)
+		return managed.ExternalDelete{}, errors.New(errNotWorkspace)
 	}
 
 	o, err := c.options(ctx, cr.Spec.ForProvider)
 	if err != nil {
-		return errors.Wrap(err, errOptions)
+		return managed.ExternalDelete{}, errors.Wrap(err, errOptions)
 	}
 
 	o = append(o, opentofu.WithArgs(cr.Spec.ForProvider.DestroyArgs))
-	return errors.Wrap(c.tofu.Destroy(ctx, o...), errDestroy)
+	return managed.ExternalDelete{}, errors.Wrap(c.tofu.Destroy(ctx, o...), errDestroy)
+}
+
+func (c *external) Disconnect(_ context.Context) error {
+	return nil
 }
 
 //nolint:gocyclo
